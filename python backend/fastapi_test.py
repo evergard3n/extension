@@ -4,13 +4,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import json
-
+from openai import OpenAI
 app = FastAPI()
+from dotenv import load_dotenv
+import os
+from core import Reflection
 
+load_dotenv()
 class Message(BaseModel):
     message: str
     sender: str
-
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+reflection = Reflection(client)
 messages: List[Message] =  []
 clients: List[WebSocket] = []
 @app.post("/chat")
@@ -20,8 +25,9 @@ async def chat(request: Message):
 
 def process_message(message: Message) -> str:
     # Replace with your chatbot logic
-    print(message)
-    messages.append(message)
+    reflectedQ = reflection(messages)
+    res = aiResponse(reflectedQ)
+    messages.append(Message(message=res, sender="Bot"))
     return f"Echo: {message}"
 
 @app.get("/chat")
@@ -47,11 +53,32 @@ async def websocket_endpoint(websocket: WebSocket):
             # Wait for new messages
             message = await websocket.receive_text()
             messages.append(Message(message=message, sender="You"))
-            # fake response
-            messages.append(Message(message="dit me may", sender="Bot"))
+            for client in clients:
+                await client.send_text(json.dumps([message.dict() for message in messages]))
+            process_message(Message(message=message, sender="You"))
+            # messages.append(Message(message=message, sender="You"))
+            # # fake response
+            # messages.append(Message(message="dit me may", sender="Bot"))
+            
             # Broadcast the message to all connected clients
             for client in clients:
                 await client.send_text(json.dumps([message.dict() for message in messages]))
     except WebSocketDisconnect:
         print(f"WebSocket disconnected: {websocket.client}")
         clients.remove(websocket)
+
+
+
+def aiResponse(message) -> str:
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant. Answer what the user says."},
+            {
+                "role": "user",
+                "content": message
+            }
+        ]
+    )
+    content = completion.choices[0].message.content
+    return content if content is not None else ""

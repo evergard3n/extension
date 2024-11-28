@@ -6,7 +6,7 @@ import { Chats } from './components/chats'
 
 function App() {
   return (
-    <div className='h-96 bg-white w-96 flex flex-col'>
+    <div className='h-fit bg-white w-96 flex flex-col flex-grow'>
       <div className='flex-1'>
       <Chats/>
       </div>
