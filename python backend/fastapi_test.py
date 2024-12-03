@@ -18,21 +18,16 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 reflection = Reflection(client)
 messages: List[Message] =  []
 clients: List[WebSocket] = []
-@app.post("/chat")
-async def chat(request: Message):
-    response = process_message(request)
-    return {"response": response}
 
-def process_message(message: Message) -> str:
+
+def process_message(message: str) -> str:
     # Replace with your chatbot logic
     reflectedQ = reflection(messages)
     res = aiResponse(reflectedQ)
     messages.append(Message(message=res, sender="Bot"))
     return f"Echo: {message}"
 
-@app.get("/chat")
-def get_messages():
-    return {"messages": messages}
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +37,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def clearMessages():
+    global messages
+    messages = []
+
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -50,16 +51,19 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         await websocket.send_text(json.dumps([message.dict() for message in messages]))
         while True:
-            # Wait for new messages
             message = await websocket.receive_text()
-            messages.append(Message(message=message, sender="You"))
-            for client in clients:
-                await client.send_text(json.dumps([message.dict() for message in messages]))
-            process_message(Message(message=message, sender="You"))
-            # messages.append(Message(message=message, sender="You"))
-            # # fake response
-            # messages.append(Message(message="dit me may", sender="Bot"))
             
+            # Wait for new messages
+            if message == "refresh":
+                clearMessages()
+            else: 
+                messages.append(Message(message=message, sender="You"))
+                # send back the message so the frontend can render
+                for client in clients:
+                    await client.send_text(json.dumps([message.dict() for message in messages]))
+                # now we actually start processing the message
+                process_message(message)
+                      
             # Broadcast the message to all connected clients
             for client in clients:
                 await client.send_text(json.dumps([message.dict() for message in messages]))
@@ -73,7 +77,7 @@ def aiResponse(message) -> str:
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant. Answer what the user says."},
+            {"role": "system", "content": ""},
             {
                 "role": "user",
                 "content": message
